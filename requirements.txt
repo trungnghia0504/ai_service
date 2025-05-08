@@ -3,6 +3,6 @@ uvicorn[standard]
 motor
 scikit-learn
 pandas
-numpy>=1.26
+numpy
 python-dotenv
 scikit-surprise
