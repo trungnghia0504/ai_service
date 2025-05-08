@@ -1,3 +1,4 @@
+setuptools<65
 fastapi
 uvicorn[standard]
 motor
