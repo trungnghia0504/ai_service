@@ -7,3 +7,4 @@ pandas
 numpy==1.24.3
 flask
 python-dotenv
+streamlit
