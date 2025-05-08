@@ -132,6 +132,6 @@ async def get_recommendations(
         "processing_time_seconds": round(processing_time, 2)
     }
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8501)
+# if __name__ == "__main__":
+#     import uvicorn
+#     uvicorn.run(app, host="0.0.0.0", port=8000)
