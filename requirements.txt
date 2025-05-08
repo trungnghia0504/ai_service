@@ -1,10 +1,8 @@
-setuptools<65
 fastapi
 uvicorn[standard]
 motor
 scikit-learn
 pandas
-numpy==1.24.3
-flask
+numpy>=1.26
 python-dotenv
 scikit-surprise
