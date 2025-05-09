@@ -1,3 +1,4 @@
+distutils
 fastapi
 uvicorn[standard]
 motor
