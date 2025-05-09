@@ -1,9 +1,8 @@
-distutils
 fastapi
 uvicorn[standard]
 motor
 scikit-learn
 pandas
+numpy==1.23
 python-dotenv
 scikit-surprise
-numpy==1.23
