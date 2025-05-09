@@ -5,4 +5,5 @@ scikit-learn
 pandas
 numpy==1.23
 python-dotenv
-scikit-surprise
+scikit-surprise==1.1.1
+
