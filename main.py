@@ -52,11 +52,10 @@ async def get_content_recommender():
 async def get_content_recommendations(
     user_id: str,
     method: RecommendationMethod = Query(default=RecommendationMethod.HYBRID),
-    top_n: int = Query(default=10, ge=1, le=100),
     recommender: ContentRecommender = Depends(get_content_recommender)
 ):
     start_time = time.time()
-    logger.info(f"Received content request for user_id={user_id}, method={method}, top_n={top_n}")
+    logger.info(f"Received content request for user_id={user_id}, method={method}")
 
     try:
         user_oid = ObjectId(user_id)
@@ -66,13 +65,13 @@ async def get_content_recommendations(
 
     try:
         if method == RecommendationMethod.CF:
-            recs = await recommender._collaborative_filtering(user_oid, top_n)
+            recs = await recommender._collaborative_filtering(user_oid)
         elif method == RecommendationMethod.CB:
-            recs = await recommender._content_based_filtering(user_oid, top_n)
+            recs = await recommender._content_based_filtering(user_oid)
         elif method == RecommendationMethod.SOCIAL:
-            recs = await recommender._social_filtering(user_oid, top_n)
+            recs = await recommender._social_filtering(user_oid)
         else:
-            recs = await recommender.hybrid_recommendations(user_oid, top_n)
+            recs = await recommender.hybrid_recommendations(user_oid)
     except TypeError as e:
         logger.error(f"TypeError: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Recommendation error: {str(e)}")
@@ -95,11 +94,10 @@ async def get_content_recommendations(
 async def get_recommendations(
     user_id: str,
     method: RecommendationMethod = Query(default=RecommendationMethod.HYBRID),
-    top_n: int = Query(default=10, ge=1, le=100),
     recommender: Recommender = Depends(get_recommender)
 ):
     start_time = time.time()
-    logger.info(f"Received request for user_id={user_id}, method={method}, top_n={top_n}")
+    logger.info(f"Received request for user_id={user_id}, method={method}")
 
     try:
         user_oid = ObjectId(user_id)
@@ -109,11 +107,11 @@ async def get_recommendations(
 
     try:
         if method == RecommendationMethod.CF:
-            recs = await recommender._collaborative_filtering(user_oid, top_n)
+            recs = await recommender._collaborative_filtering(user_oid)
         elif method == RecommendationMethod.CB:
-            recs = await recommender._content_based_filtering(user_oid, 0.5, 50, top_n)
+            recs = await recommender._content_based_filtering(user_oid)
         else:
-            recs = await recommender.hybrid_recommendations(user_oid, top_n)
+            recs = await recommender.hybrid_recommendations(user_oid) 
     except TypeError as e:
         logger.error(f"TypeError: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Recommendation error: {str(e)}")
@@ -132,6 +130,6 @@ async def get_recommendations(
         "processing_time_seconds": round(processing_time, 2)
     }
 
-# if __name__ == "__main__":
-#     import uvicorn
-#     uvicorn.run(app, host="0.0.0.0", port=8000)
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
