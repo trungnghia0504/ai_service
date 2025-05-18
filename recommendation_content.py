@@ -1,4 +1,3 @@
-# recommendation_service/recommender.py
 import asyncio
 from motor.motor_asyncio import AsyncIOMotorClient
 from surprise import SVD, Dataset, Reader
@@ -11,7 +10,7 @@ from bson.objectid import ObjectId
 import os
 from dotenv import load_dotenv
 
-# Load biến môi trường từ file .env
+# Load environment variables
 load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
@@ -24,15 +23,40 @@ class ContentRecommender:
         self.users = self.db["users"]
         self.posts = self.db["posts"]
         self.interactions = self.db["interactions"]
+        self.params_collection = self.db["recommendation_params"]
+
+    async def get_params(self):
+        """Fetch recommendation parameters from MongoDB"""
+        params = await self.params_collection.find_one()
+        if not params:
+            # Default parameters if none exist
+            params = {
+                "post_top_n": 10,
+                "similarity_threshold": 0.1,
+                "post_cf_weight": 0.5,
+                "post_cb_weight": 0.3,
+                "post_social_weight": 0.2,
+                "commentWeight": 2,
+                "likeWeight": 1,
+                "viewWeight": 0.5
+            }
+            await self.params_collection.insert_one(params)
+        return params
 
     async def create_indexes(self):
-        """Tạo chỉ mục tối ưu truy vấn"""
+        """Create indexes to optimize queries"""
         await self.interactions.create_index([("fromUser", 1), ("postId", 1)])
         await self.posts.create_index([("tags", 1)])
         await self.posts.create_index([("likes", 1)])
 
-    async def _collaborative_filtering(self, user_id, top_n=10):
-        """Lọc cộng tác dựa trên tương tác với bài viết"""
+    async def _collaborative_filtering(self, user_id):
+        """Collaborative filtering based on post interactions"""
+        params = await self.get_params()
+        top_n = params["post_top_n"]
+        comment_weight = params["commentWeight"]
+        like_weight = params["likeWeight"]
+        view_weight = params["viewWeight"]
+
         pipeline = [
             {"$match": {"postId": {"$exists": True}}},
             {"$group": {"_id": {"userId": "$fromUser", "postId": "$postId", "type": "$type"}, "count": {"$sum": 1}}},
@@ -41,9 +65,9 @@ class ContentRecommender:
                 "weighted_count": {
                     "$switch": {
                         "branches": [
-                            {"case": {"$eq": ["$type", "comment"]}, "then": {"$multiply": ["$count", 2]}},
-                            {"case": {"$eq": ["$type", "like"]}, "then": "$count"},
-                            {"case": {"$eq": ["$type", "view"]}, "then": {"$multiply": ["$count", 0.5]}}
+                            {"case": {"$eq": ["$type", "comment"]}, "then": {"$multiply": ["$count", comment_weight]}},
+                            {"case": {"$eq": ["$type", "like"]}, "then": {"$multiply": ["$count", like_weight]}},
+                            {"case": {"$eq": ["$type", "view"]}, "then": {"$multiply": ["$count", view_weight]}}
                         ],
                         "default": "$count"
                     }
@@ -51,7 +75,6 @@ class ContentRecommender:
             }},
             {"$group": {"_id": {"userId": "$userId", "postId": "$postId"}, "count": {"$sum": "$weighted_count"}}},
             {"$sort": {"count": -1}},
-            # Loại bỏ $limit hoặc tăng nếu cần
         ]
         interactions = [doc async for doc in self.interactions.aggregate(pipeline)]
         if not interactions:
@@ -60,7 +83,7 @@ class ContentRecommender:
 
         data = [(str(i["_id"]["userId"]), str(i["_id"]["postId"]), i["count"]) for i in interactions]
         df = pd.DataFrame(data, columns=["userId", "postId", "count"])
-        df["count"] = df["count"].clip(upper=10)  # Chuẩn hóa thang điểm
+        df["count"] = df["count"].clip(upper=10)  # Normalize rating scale
         reader = Reader(rating_scale=(1, 10))
         dataset = Dataset.load_from_df(df, reader)
         trainset = dataset.build_full_trainset()
@@ -77,7 +100,12 @@ class ContentRecommender:
         top_recs = sorted(predictions, key=lambda x: x.est, reverse=True)[:top_n]
         return [pred.iid for pred in top_recs]
 
-    async def _content_based_filtering(self, user_id, top_n=10):
+    async def _content_based_filtering(self, user_id):
+        """Content-based filtering based on user interests and post content"""
+        params = await self.get_params()
+        top_n = params["post_top_n"]
+        similarity_threshold = params["similarity_threshold"]
+
         user = await self.users.find_one({"_id": user_id})
         if not user:
             logger.warning(f"No user found for user_id: {user_id}")
@@ -104,29 +132,18 @@ class ContentRecommender:
         recs = [
             (str(p["_id"]), similarity[i])
             for i, p in enumerate(posts)
-            if str(p["_id"]) not in user_interacted and similarity[i] > 0.1  # Thêm ngưỡng
+            if str(p["_id"]) not in user_interacted and similarity[i] > similarity_threshold
         ]
         recs.sort(key=lambda x: x[1], reverse=True)
         logger.info(f"Recommendations before slicing: {recs}")
 
-        # # Nếu không có gợi ý nào thỏa mãn ngưỡng, trả về bài viết phổ biến
-        # if not recs:
-        #     logger.info("No content-based recommendations found, falling back to popular posts")
-        #     # Chuyển user_interacted thành danh sách ObjectId
-        #     user_interacted_ids = [ObjectId(post_id) for post_id in user_interacted]
-        #     popular_posts = [
-        #         str(doc["_id"])
-        #         async for doc in self.posts.find({"_id": {"$nin": user_interacted_ids}})
-        #         .sort([("likes", -1), ("createdAt", -1)])
-        #         .limit(top_n)
-        #     ]
-        #     logger.info(f"Popular posts: {popular_posts}")
-        #     return popular_posts
-
         return [r[0] for r in recs[:top_n]]
 
-    async def _social_filtering(self, user_id, top_n=10):
-        """Lọc dựa trên lượt thích của bạn bè"""
+    async def _social_filtering(self, user_id):
+        """Social filtering based on friends' likes"""
+        params = await self.get_params()
+        top_n = params["post_top_n"]
+
         user = await self.users.find_one({"_id": user_id})
         if not user:
             logger.warning(f"No user found for user_id: {user_id}")
@@ -148,19 +165,25 @@ class ContentRecommender:
         recs.sort(key=lambda x: (x[1], x[0]), reverse=True)
         return [r[0] for r in recs[:top_n]]
 
-    async def hybrid_recommendations(self, user_id, top_n=10):
-        """Kết hợp hybrid"""
-        cf_task = self._collaborative_filtering(user_id, top_n)
-        cb_task = self._content_based_filtering(user_id, top_n)
-        social_task = self._social_filtering(user_id, top_n)
+    async def hybrid_recommendations(self, user_id):
+        """Hybrid recommendation combining CF, CB, and social filtering"""
+        params = await self.get_params()
+        top_n = params["post_top_n"]
+        cf_weight = params["post_cf_weight"]
+        cb_weight = params["post_cb_weight"]
+        social_weight = params["post_social_weight"]
+
+        cf_task = self._collaborative_filtering(user_id)
+        cb_task = self._content_based_filtering(user_id)
+        social_task = self._social_filtering(user_id)
         cf_recs, cb_recs, social_recs = await asyncio.gather(cf_task, cb_task, social_task)
 
         combined = {}
         for i, rec in enumerate(cf_recs):
-            combined[rec] = combined.get(rec, 0) + 0.5 * (top_n - i)  # 50% SVD
+            combined[rec] = combined.get(rec, 0) + cf_weight * (top_n - i)
         for i, rec in enumerate(cb_recs):
-            combined[rec] = combined.get(rec, 0) + 0.3 * (top_n - i)  # 30% TF-IDF
+            combined[rec] = combined.get(rec, 0) + cb_weight * (top_n - i)
         for i, rec in enumerate(social_recs):
-            combined[rec] = combined.get(rec, 0) + 0.2 * (top_n - i)  # 20% Social
+            combined[rec] = combined.get(rec, 0) + social_weight * (top_n - i)
 
         return sorted(combined.keys(), key=lambda x: combined[x], reverse=True)[:top_n]
