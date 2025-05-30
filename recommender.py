@@ -38,7 +38,12 @@ class Recommender:
                 "user_cb_weight": 0.5,
                 "commentWeight": 2,
                 "likeWeight": 1,
-                "viewWeight": 0.5
+                "viewWeight": 0.5,
+                "post_top_n": 10,
+                "similarity_threshold": 0.1,
+                "post_cf_weight": 0.5,
+                "post_cb_weight": 0.3,
+                "post_social_weight": 0.2,
             }
             await self.params_collection.insert_one(params)
         return params

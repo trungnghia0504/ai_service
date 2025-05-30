@@ -31,14 +31,19 @@ class ContentRecommender:
         if not params:
             # Default parameters if none exist
             params = {
+                "user_top_n": 10,
+                "interest_threshold": 0.5,
+                "max_distance_km": 50,
+                "user_cf_weight": 0.5,
+                "user_cb_weight": 0.5,
+                "commentWeight": 2,
+                "likeWeight": 1,
+                "viewWeight": 0.5,
                 "post_top_n": 10,
                 "similarity_threshold": 0.1,
                 "post_cf_weight": 0.5,
                 "post_cb_weight": 0.3,
                 "post_social_weight": 0.2,
-                "commentWeight": 2,
-                "likeWeight": 1,
-                "viewWeight": 0.5
             }
             await self.params_collection.insert_one(params)
         return params
